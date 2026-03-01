@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>US Economic Indicators Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2128;
+      --surface3: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #7d8590;
+      --text-dim: #484f58;
+      --green: #3fb950;
+      --green-dim: rgba(63,185,80,0.15);
+      --red: #f85149;
+      --red-dim: rgba(248,81,73,0.15);
+      --accent: #58a6ff;
+      --accent-dim: rgba(88,166,255,0.15);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ── */
+    .site-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .site-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .site-logo svg { color: var(--accent); }
+    .site-logo-text { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+    .site-logo-sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+    .header-right { display: flex; align-items: center; gap: 8px; }
+    .last-refresh { font-size: 11px; color: var(--text-muted); }
+
+    /* ── API Bar ── */
+    .api-bar {
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 32px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .api-bar label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+    .api-input {
+      flex: 1;
+      min-width: 200px;
+      max-width: 380px;
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      transition: border-color 0.15s;
+    }
+    .api-input:focus { outline: none; border-color: var(--accent); }
+    .api-input::placeholder { color: var(--text-dim); }
+    .btn-fetch {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      padding: 7px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    .btn-fetch:hover { opacity: 0.85; }
+    .btn-fetch:disabled { opacity: 0.45; cursor: not-allowed; }
+    .api-help { font-size: 11px; color: var(--text-muted); }
+    .api-help a { color: var(--accent); text-decoration: none; }
+    .api-help a:hover { text-decoration: underline; }
+    .error-msg {
+      font-size: 12px;
+      color: var(--red);
+      background: var(--red-dim);
+      padding: 4px 10px;
+      border-radius: 4px;
+      display: none;
+    }
+    .error-msg.show { display: block; }
+
+    /* ── Main ── */
+    main { max-width: 1360px; margin: 0 auto; padding: 28px 32px; }
+
+    /* ── Status ── */
+    .status-bar {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 22px;
+      padding: 8px 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .status-bar.show { display: flex; }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Cards ── */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 18px 12px;
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      user-select: none;
+    }
+    .card:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .card-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+    .card-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 3px; }
+    .card-value.skeleton-val {
+      width: 80px; height: 28px; border-radius: 4px;
+      background: var(--surface3); animation: shimmer 1.4s infinite;
+    }
+    .card-change {
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      margin-bottom: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .card-change.up { color: var(--green); }
+    .card-change.down { color: var(--red); }
+    .card-change.flat { color: var(--text-muted); }
+    .card-period { font-size: 10px; color: var(--text-muted); margin-bottom: 10px; }
+    .card-chart-wrap { height: 60px; }
+
+    /* skeleton shimmer */
+    @keyframes shimmer {
+      0%   { background-color: var(--surface3); }
+      50%  { background-color: var(--border); }
+      100% { background-color: var(--surface3); }
+    }
+
+    /* ── Detail Panel ── */
+    .detail-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px 24px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .detail-panel.show { display: block; }
+    .detail-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .detail-name { font-size: 16px; font-weight: 700; margin-bottom: 3px; }
+    .detail-value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .detail-change { font-size: 13px; margin-top: 3px; }
+    .detail-meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+    .range-btns { display: flex; gap: 4px; align-items: center; }
+    .range-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 4px 11px;
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .range-btn:hover:not(.active) { border-color: var(--accent); color: var(--text); }
+    .range-btn.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+    .detail-chart-wrap { height: 280px; position: relative; }
+
+    /* ── Table ── */
+    .table-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .table-title {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 10px 20px;
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    thead th.right { text-align: right; }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody td { padding: 13px 20px; vertical-align: middle; }
+    tbody td.right { text-align: right; }
+    .td-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 8px;
+      flex-shrink: 0;
+    }
+    .td-indicator { font-weight: 600; display: flex; align-items: center; }
+    .td-freq { font-size: 11px; color: var(--text-muted); margin-left: 8px; }
+    .td-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .td-prev { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .td-chg { font-variant-numeric: tabular-nums; }
+    .td-chg.up { color: var(--green); }
+    .td-chg.down { color: var(--red); }
+    .td-chg.flat { color: var(--text-muted); }
+    .td-updated { color: var(--text-muted); font-size: 12px; }
+    .td-source { color: var(--text-muted); font-size: 11px; }
+    .td-spark { width: 120px; }
+    .td-spark canvas { display: block; }
+
+    /* ── Empty state ── */
+    .empty-state {
+      text-align: center;
+      padding: 60px 24px;
+      color: var(--text-muted);
+    }
+    .empty-state svg { margin: 0 auto 16px; display: block; opacity: 0.35; }
+    .empty-state h3 { font-size: 16px; color: var(--text-muted); margin-bottom: 8px; }
+    .empty-state p { font-size: 13px; line-height: 1.6; max-width: 360px; margin: 0 auto; }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<!-- ─── Header ──────────────────────────────────────── -->
+<header class="site-header">
+  <div class="site-logo">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+    </svg>
+    <div>
+      <div class="site-logo-text">US Economic Dashboard</div>
+      <div class="site-logo-sub">Key Macro Indicators · Powered by FRED</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="last-refresh" id="lastRefresh"></span>
+  </div>
+</header>
+
+<!-- ─── API Bar ──────────────────────────────────────── -->
+<div class="api-bar">
+  <label for="apiKeyInput">FRED API Key</label>
+  <input type="password" id="apiKeyInput" class="api-input"
+         placeholder="e.g. abcd1234efgh5678..." autocomplete="off" />
+  <button class="btn-fetch" id="fetchBtn" onclick="loadAll()">Fetch Data</button>
+  <span class="api-help">
+    Free key at <a href="https://fred.stlouisfed.org/docs/api/api_key.html" target="_blank" rel="noopener">fred.stlouisfed.org</a>
+  </span>
+  <span class="error-msg" id="errorMsg"></span>
+</div>
+
+<!-- ─── Main Content ─────────────────────────────────── -->
+<main>
+
+  <!-- Status bar (loading) -->
+  <div class="status-bar" id="statusBar">
+    <div class="spinner"></div>
+    <span id="statusText">Fetching data from FRED…</span>
+  </div>
+
+  <!-- Cards -->
+  <div class="cards-grid" id="cardsGrid">
+    <!-- Populated by JS or shows empty state -->
+    <div class="empty-state" id="emptyState" style="grid-column:1/-1;">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/><circle cx="16" cy="11" r="1" fill="currentColor"/>
+      </svg>
+      <h3>No data loaded</h3>
+      <p>Enter your free FRED API key above and click <strong>Fetch Data</strong> to load live economic indicators.</p>
+    </div>
+  </div>
+
+  <!-- Detail chart panel (shown on card click) -->
+  <div class="detail-panel" id="detailPanel">
+    <div class="detail-top">
+      <div>
+        <div class="detail-name" id="detailName">—</div>
+        <div class="detail-value" id="detailValue">—</div>
+        <div class="detail-change" id="detailChange"></div>
+        <div class="detail-meta" id="detailMeta"></div>
+      </div>
+      <div class="range-btns" id="rangeBtns">
+        <button class="range-btn" data-years="1">1Y</button>
+        <button class="range-btn" data-years="2">2Y</button>
+        <button class="range-btn active" data-years="5">5Y</button>
+        <button class="range-btn" data-years="10">10Y</button>
+        <button class="range-btn" data-years="0">Max</button>
+      </div>
+    </div>
+    <div class="detail-chart-wrap">
+      <canvas id="detailChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Summary Table -->
+  <div class="table-section" id="tableSection">
+    <div class="table-title">Summary</div>
+    <div id="tableWrap">
+      <div class="empty-state" style="padding:40px 24px;">
+        <p style="font-size:12px;">Load data to see the summary table.</p>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+/* ══════════════════════════════════════════════
+   Configuration
+══════════════════════════════════════════════ */
+const INDICATORS = [
+  {
+    id: 'gdp',
+    name: 'Real GDP Growth',
+    series: 'A191RL1Q225SBEA',
+    units: 'lin',
+    unitLabel: 'Annualized % Chg',
+    frequency: 'Quarterly',
+    source: 'BEA / FRED',
+    color: '#58a6ff',
+    suffix: '%',
+    decimals: 1,
+  },
+  {
+    id: 'corepce',
+    name: 'Core PCE Inflation',
+    series: 'PCEPILFE',
+    units: 'pc1',          // year-over-year % change
+    unitLabel: 'YoY % Chg',
+    frequency: 'Monthly',
+    source: 'BEA / FRED',
+    color: '#f78166',
+    suffix: '%',
+    decimals: 2,
+  },
+  {
+    id: 'fedfunds',
+    name: 'Fed Funds Rate',
+    series: 'FEDFUNDS',
+    units: 'lin',
+    unitLabel: 'Percent',
+    frequency: 'Monthly',
+    source: 'Federal Reserve / FRED',
+    color: '#ffa657',
+    suffix: '%',
+    decimals: 2,
+  },
+  {
+    id: 'unrate',
+    name: 'Unemployment Rate',
+    series: 'UNRATE',
+    units: 'lin',
+    unitLabel: 'Percent',
+    frequency: 'Monthly',
+    source: 'BLS / FRED',
+    color: '#7ee787',
+    suffix: '%',
+    decimals: 1,
+  },
+  {
+    id: 'gs10',
+    name: '10-Year Treasury Yield',
+    series: 'GS10',
+    units: 'lin',
+    unitLabel: 'Percent',
+    frequency: 'Monthly',
+    source: 'Federal Reserve / FRED',
+    color: '#d2a8ff',
+    suffix: '%',
+    decimals: 2,
+  },
+];
+
+/* ══════════════════════════════════════════════
+   State
+══════════════════════════════════════════════ */
+let allData = {};          // { seriesId: [{date, value}] }
+let detailChartInst = null;
+let sparkChartInsts = {};  // { id: ChartInstance }
+let activeId = null;
+let activeYears = 5;       // default range
+
+/* ══════════════════════════════════════════════
+   FRED Fetch
+══════════════════════════════════════════════ */
+async function fetchSeries(apiKey, indicator) {
+  const start = new Date();
+  start.setFullYear(start.getFullYear() - 25);
+  const startStr = start.toISOString().split('T')[0];
+
+  const url = new URL('/api/fred', window.location.origin);
+  url.searchParams.set('series_id', indicator.series);
+  url.searchParams.set('api_key', apiKey);
+  url.searchParams.set('file_type', 'json');
+  url.searchParams.set('observation_start', startStr);
+  url.searchParams.set('units', indicator.units);
+  url.searchParams.set('sort_order', 'asc');
+
+  const resp = await fetch(url.toString());
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error_message || `HTTP ${resp.status}`);
+  }
+  const json = await resp.json();
+
+  return json.observations
+    .filter(o => o.value !== '.' && o.value !== '')
+    .map(o => ({ date: o.date, value: parseFloat(o.value) }));
+}
+
+/* ══════════════════════════════════════════════
+   Main load
+══════════════════════════════════════════════ */
+async function loadAll() {
+  const apiKey = document.getElementById('apiKeyInput').value.trim();
+  if (!apiKey) { showError('Please enter your FRED API key.'); return; }
+
+  clearError();
+  setLoading(true);
+  destroyAllCharts();
+  allData = {};
+  activeId = null;
+  document.getElementById('detailPanel').classList.remove('show');
+
+  let failed = 0;
+  let lastError = '';
+  for (const ind of INDICATORS) {
+    setStatus(`Fetching ${ind.name}…`);
+    try {
+      allData[ind.id] = await fetchSeries(apiKey, ind);
+    } catch (e) {
+      console.error(ind.name, e);
+      allData[ind.id] = [];
+      lastError = e.message;
+      failed++;
+    }
+  }
+
+  setLoading(false);
+  if (failed === INDICATORS.length) {
+    let hint = lastError;
+    if (!hint || hint.includes('Failed to fetch') || hint.includes('NetworkError')) {
+      hint = 'Network error — open the page via http://localhost:8080 instead of file://, or check your internet connection.';
+    } else if (hint.toLowerCase().includes('bad') || hint.toLowerCase().includes('invalid') || hint.includes('400')) {
+      hint = `Invalid API key (${hint}). Double-check your FRED API key at fred.stlouisfed.org.`;
+    }
+    showError('Could not load data. ' + hint);
+    return;
+  }
+
+  document.getElementById('lastRefresh').textContent =
+    'Last updated: ' + new Date().toLocaleTimeString();
+
+  renderCards();
+  renderTable();
+}
+
+/* ══════════════════════════════════════════════
+   Helpers
+══════════════════════════════════════════════ */
+function fmt(ind, val) {
+  if (val == null || isNaN(val)) return '—';
+  return val.toFixed(ind.decimals) + ind.suffix;
+}
+
+function changeInfo(current, prev) {
+  if (prev == null) return { text: '—', dir: 'flat' };
+  const diff = current - prev;
+  const dir = diff > 0.005 ? 'up' : diff < -0.005 ? 'down' : 'flat';
+  const sign = diff > 0 ? '+' : '';
+  return { text: `${sign}${diff.toFixed(2)}`, dir };
+}
+
+function arrowSvg(dir) {
+  if (dir === 'up')   return '<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 2l4 5H2z"/></svg>';
+  if (dir === 'down') return '<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 10 2 5h8z"/></svg>';
+  return '<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="5" width="8" height="2"/></svg>';
+}
+
+function filterByYears(data, years) {
+  if (!years) return data;
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - years);
+  const cutStr = cutoff.toISOString().split('T')[0];
+  return data.filter(d => d.date >= cutStr);
+}
+
+function formatDateLabel(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+/* ══════════════════════════════════════════════
+   Render Cards
+══════════════════════════════════════════════ */
+function renderCards() {
+  const grid = document.getElementById('cardsGrid');
+  grid.innerHTML = '';
+
+  INDICATORS.forEach(ind => {
+    const data = allData[ind.id] || [];
+    const latest = data[data.length - 1];
+    const prev   = data[data.length - 2];
+    const latestVal = latest ? latest.value : null;
+    const prevVal   = prev   ? prev.value   : null;
+    const { text: chgText, dir } = changeInfo(latestVal, prevVal);
+    const latestDate = latest ? formatDateLabel(latest.date) : '—';
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = `card-${ind.id}`;
+    card.innerHTML = `
+      <div class="card-label">${ind.name}</div>
+      <div class="card-value">${fmt(ind, latestVal)}</div>
+      <div class="card-change ${dir}">${arrowSvg(dir)} ${chgText}${ind.suffix} from prior</div>
+      <div class="card-period">Latest: ${latestDate} · ${ind.frequency}</div>
+      <div class="card-chart-wrap"><canvas id="spark-${ind.id}"></canvas></div>
+    `;
+    card.addEventListener('click', () => showDetail(ind.id));
+    grid.appendChild(card);
+
+    // Sparkline
+    renderSparkline(ind, data);
+  });
+}
+
+function renderSparkline(ind, data) {
+  const sparkData = filterByYears(data, 2);
+  const ctx = document.getElementById(`spark-${ind.id}`);
+  if (!ctx) return;
+
+  if (sparkChartInsts[ind.id]) {
+    sparkChartInsts[ind.id].destroy();
+    delete sparkChartInsts[ind.id];
+  }
+
+  const values = sparkData.map(d => d.value);
+  const first = values[0] ?? 0;
+  const last  = values[values.length - 1] ?? 0;
+  const lineColor = last >= first ? '#3fb950' : '#f85149';
+
+  sparkChartInsts[ind.id] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: sparkData.map(d => d.date),
+      datasets: [{
+        data: values,
+        borderColor: lineColor,
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.3,
+        fill: true,
+        backgroundColor: (ctx) => {
+          const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, 60);
+          gradient.addColorStop(0, last >= first ? 'rgba(63,185,80,0.3)' : 'rgba(248,81,73,0.3)');
+          gradient.addColorStop(1, 'rgba(0,0,0,0)');
+          return gradient;
+        },
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        x: { display: false },
+        y: { display: false },
+      },
+    },
+  });
+}
+
+/* ══════════════════════════════════════════════
+   Detail Panel
+══════════════════════════════════════════════ */
+function showDetail(id) {
+  activeId = id;
+  const ind  = INDICATORS.find(i => i.id === id);
+  const data = allData[id] || [];
+
+  // Highlight active card
+  document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+  document.getElementById(`card-${id}`)?.classList.add('active');
+
+  const latest = data[data.length - 1];
+  const prev   = data[data.length - 2];
+  const latestVal = latest?.value;
+  const prevVal   = prev?.value;
+  const { text: chgText, dir } = changeInfo(latestVal, prevVal);
+
+  document.getElementById('detailName').textContent  = ind.name;
+  document.getElementById('detailValue').textContent = fmt(ind, latestVal);
+
+  const chgEl = document.getElementById('detailChange');
+  chgEl.className = `detail-change ${dir}`;
+  chgEl.innerHTML = `${arrowSvg(dir)} ${chgText}${ind.suffix} vs prior ${ind.frequency.toLowerCase() === 'quarterly' ? 'quarter' : 'month'}`;
+
+  document.getElementById('detailMeta').textContent =
+    `${ind.unitLabel} · ${ind.frequency} · Source: ${ind.source}`;
+
+  document.getElementById('detailPanel').classList.add('show');
+
+  // Scroll panel into view
+  document.getElementById('detailPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  renderDetailChart(ind, data, activeYears);
+}
+
+function renderDetailChart(ind, data, years) {
+  const filtered = filterByYears(data, years);
+  const labels = filtered.map(d => formatDateLabel(d.date));
+  const values = filtered.map(d => d.value);
+
+  const first = values[0] ?? 0;
+  const last  = values[values.length - 1] ?? 0;
+  const lineColor = ind.color;
+
+  if (detailChartInst) { detailChartInst.destroy(); detailChartInst = null; }
+
+  const ctx = document.getElementById('detailChart');
+  detailChartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: ind.name,
+        data: values,
+        borderColor: lineColor,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: lineColor,
+        tension: 0.25,
+        fill: true,
+        backgroundColor: (ctx) => {
+          const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, 280);
+          gradient.addColorStop(0, hexToRgba(lineColor, 0.25));
+          gradient.addColorStop(1, hexToRgba(lineColor, 0.0));
+          return gradient;
+        },
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1c2128',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#7d8590',
+          bodyColor: '#e6edf3',
+          bodyFont: { weight: '700', size: 14 },
+          padding: 12,
+          callbacks: {
+            title: ctx => ctx[0].label,
+            label: ctx => `  ${ind.name}: ${ctx.parsed.y.toFixed(ind.decimals)}${ind.suffix}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { color: '#21262d', drawBorder: false },
+          ticks: { color: '#7d8590', font: { size: 11 }, maxTicksLimit: 12 },
+          border: { display: false },
+        },
+        y: {
+          position: 'right',
+          grid: { color: '#21262d', drawBorder: false },
+          ticks: {
+            color: '#7d8590',
+            font: { size: 11 },
+            callback: v => v.toFixed(ind.decimals) + ind.suffix,
+          },
+          border: { display: false },
+        },
+      },
+    },
+  });
+}
+
+/* Range buttons */
+document.getElementById('rangeBtns').addEventListener('click', e => {
+  const btn = e.target.closest('.range-btn');
+  if (!btn) return;
+  document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  activeYears = parseInt(btn.dataset.years, 10);
+  if (activeId) {
+    const ind  = INDICATORS.find(i => i.id === activeId);
+    renderDetailChart(ind, allData[activeId] || [], activeYears);
+  }
+});
+
+/* ══════════════════════════════════════════════
+   Render Table
+══════════════════════════════════════════════ */
+function renderTable() {
+  const wrap = document.getElementById('tableWrap');
+  const rows = INDICATORS.map(ind => {
+    const data    = allData[ind.id] || [];
+    const latest  = data[data.length - 1];
+    const prev    = data[data.length - 2];
+    const latestVal = latest?.value;
+    const prevVal   = prev?.value;
+    const { text: chgText, dir } = changeInfo(latestVal, prevVal);
+    const latestDate = latest ? formatDateLabel(latest.date) : '—';
+    const prevDate   = prev   ? formatDateLabel(prev.date)   : '—';
+
+    return `
+      <tr>
+        <td>
+          <div class="td-indicator">
+            <span class="td-dot" style="background:${ind.color}"></span>
+            ${ind.name}
+            <span class="td-freq">${ind.frequency}</span>
+          </div>
+        </td>
+        <td class="td-value right">${fmt(ind, latestVal)}</td>
+        <td class="td-prev right">${fmt(ind, prevVal)}</td>
+        <td class="td-chg ${dir} right">${dir === 'flat' ? '—' : chgText + ind.suffix}</td>
+        <td class="td-updated">${latestDate}</td>
+        <td class="td-updated">${prevDate}</td>
+        <td class="td-source">${ind.source}</td>
+      </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Indicator</th>
+          <th class="right">Latest</th>
+          <th class="right">Prior</th>
+          <th class="right">Change</th>
+          <th>Last Updated</th>
+          <th>Prior Period</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+/* ══════════════════════════════════════════════
+   UI helpers
+══════════════════════════════════════════════ */
+function setLoading(on) {
+  document.getElementById('fetchBtn').disabled = on;
+  document.getElementById('statusBar').classList.toggle('show', on);
+  if (!on) document.getElementById('statusText').textContent = '';
+}
+function setStatus(msg) {
+  document.getElementById('statusText').textContent = msg;
+}
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+function clearError() {
+  document.getElementById('errorMsg').classList.remove('show');
+}
+function destroyAllCharts() {
+  if (detailChartInst) { detailChartInst.destroy(); detailChartInst = null; }
+  Object.values(sparkChartInsts).forEach(c => c.destroy());
+  sparkChartInsts = {};
+}
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/* Enter key on API input */
+document.getElementById('apiKeyInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') loadAll();
+});
+</script>
+</body>
+</html>
